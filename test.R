@@ -30,6 +30,7 @@ library(geojsonsf)
 library(jsonlite)
 library(gt)
 library(gtExtras)
+library(leaflet)
 
 options(scipen = 100)
 
@@ -66,10 +67,10 @@ dc_311_2024 <- st_read("https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DAT
 # census tract summ
 tracts_2024 <- st_join(dc_311_2024, dc_tracts, join = st_intersects) %>%
   st_drop_geometry() %>%
-  group_by(GEOID, year, month) %>%
+  group_by(GEOID, SERVICECODEDESCRIPTION, year, month) %>%
   summarize(
     total_calls = n(),
-    total_response = sum(response_time)
+    total_response = mean(response_time)
   ) %>%
   ungroup() %>%
   filter(!is.na(GEOID))
@@ -87,17 +88,82 @@ ward_2024 <- dc_311_2024 %>%
                           WARD == "Ward 7" ~ "7",
                           WARD == "Ward 8" ~ "8",
                           TRUE ~ WARD)) %>%
-  group_by(WARD, year, month) %>%
+  group_by(WARD, SERVICECODEDESCRIPTION, year, month) %>%
   summarize(
     total_calls = n(),
-    total_response = sum(response_time)
+    total_response = mean(response_time)
   ) %>%
   ungroup() %>%
   filter(!is.na(WARD) & WARD != "Null")
 
+# map: average response times
+set_urbn_defaults(style = "map")
 
+map_data <- tracts_2024 %>%
+  group_by(GEOID) %>%
+  summarize(response_avg = weighted.mean(total_response, total_calls),
+            sum_total_calls = sum(total_calls)) %>%
+  ungroup()
 
+t1 <- dc_tracts %>%
+  full_join(map_data, by = c("GEOID")) %>%
+  ggplot() + 
+  geom_sf(aes(fill = response_avg)) + 
+  scale_fill_gradientn(
+    labels = scales::label_comma(),
+    name = NULL,
+    #labels = c("Lower", "", "Middle", "",  "Higher"),
+    na.value = "#d2d2d2"
+  ) + 
+  geom_sf(data = dc_wards, color = "white", fill = "transparent", linewidth = 1.5) +
+  theme(legend.direction = "vertical", legend.box = "vertical",
+        plot.caption = element_markdown(hjust = 0, size = 9),
+        legend.title = element_text(face = "bold", size = 10)) +
+  ggtitle("Average Response Time (in Days)") + 
+  labs(caption = paste("**Source:**", "311 data (Open Data DC)"))
 
+# map: # of calls
+t2 <- dc_tracts %>%
+  full_join(map_data, by = c("GEOID")) %>%
+  ggplot() + 
+  geom_sf(aes(fill = sum_total_calls)) + 
+  scale_fill_gradientn(
+    labels = scales::label_comma(),
+    name = NULL,
+    #labels = c("Lower", "", "Middle", "",  "Higher"),
+    na.value = "#d2d2d2"
+  ) + 
+  geom_sf(data = dc_wards, color = "white", fill = "transparent", linewidth = 1.5) +
+  theme(legend.direction = "vertical", legend.box = "vertical",
+        plot.caption = element_markdown(hjust = 0, size = 9),
+        legend.title = element_text(face = "bold", size = 10)) +
+  ggtitle("Total 311 Calls") + 
+  labs(caption = paste("**Source:**", "311 data (Open Data DC)"))
+
+grid.arrange(t1, t2, nrow = 1)
+
+# map alternative
+m1<- dc_tracts %>%
+  full_join(map_data, by = c("GEOID")) %>%
+  mapview(zcol = "sum_total_calls", col.regions = palette_urbn_cyan, 
+          layer.name = "Total 311 Calls", legend.pos = "bottomleft")
+
+m2 <- dc_tracts %>%
+  full_join(map_data, by = c("GEOID")) %>%
+  mapview(zcol = "response_avg", col.regions = palette_urbn_magenta, 
+          layer.name = "Average Response Time (in Days)", legend.pos = "topright")
+
+m1| m2
+
+# data table
+table_data <- ward_2024 %>%
+  group_by(WARD) %>%
+  summarize(response_avg = weighted.mean(total_response, total_calls),
+            test = sum(total_response * total_calls) / sum(total_calls),
+            sum_total_calls = sum(total_calls)) %>%
+  ungroup()
+
+# math is not right. Need to take an average and then do a weighted average of averages.
 
 
 
