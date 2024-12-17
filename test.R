@@ -64,16 +64,45 @@ dc_311_2024 <- st_read("https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DAT
   select(-ADDDATE, -RESOLUTIONDATE, -SERVICEORDERSTATUS) %>%
   st_transform(crs = 6487)
 
+# load data for 2023
+dc_311_2023 <- st_read("https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/ServiceRequests/FeatureServer/15/query?outFields=*&where=1%3D1&f=geojson", 
+                       quiet = TRUE) %>%
+  select(SERVICECODEDESCRIPTION, ADDDATE, RESOLUTIONDATE, WARD, SERVICEORDERSTATUS) %>%
+  filter(SERVICEORDERSTATUS == "Closed") %>%
+  filter(!is.na(ADDDATE) & !is.na(RESOLUTIONDATE) & ADDDATE != 0 & RESOLUTIONDATE != 0) %>%
+  mutate(ADDDATE = ADDDATE/1000,
+         ADDDATE = as.POSIXct(ADDDATE, origin = "1970-01-01", tz = ),
+         RESOLUTIONDATE = RESOLUTIONDATE/1000,
+         RESOLUTIONDATE = as.POSIXct(RESOLUTIONDATE, origin = "1970-01-01", tz = ),
+         month = month(ADDDATE, label = TRUE, abbr = TRUE),
+         year = year(ADDDATE),
+         response_time = difftime(RESOLUTIONDATE, ADDDATE, units = "days"),
+         response_time = round(as.numeric(response_time), digits = 2)) %>%
+  select(-ADDDATE, -RESOLUTIONDATE, -SERVICEORDERSTATUS) %>%
+  st_transform(crs = 6487)
+
 # census tract summ
 tracts_2024 <- st_join(dc_311_2024, dc_tracts, join = st_intersects) %>%
   st_drop_geometry() %>%
   group_by(GEOID, SERVICECODEDESCRIPTION, year, month) %>%
   summarize(
     total_calls = n(),
-    total_response = mean(response_time)
+    avg_response = mean(response_time)
   ) %>%
   ungroup() %>%
   filter(!is.na(GEOID))
+
+tracts_2023 <- st_join(dc_311_2023, dc_tracts, join = st_intersects) %>%
+  st_drop_geometry() %>%
+  group_by(GEOID, SERVICECODEDESCRIPTION, year, month) %>%
+  summarize(
+    total_calls = n(),
+    avg_response = mean(response_time)
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(GEOID))
+
+tracts_all <- rbind(tracts_2023, tracts_2024)
 
 # ward month year summ
 ward_2024 <- dc_311_2024 %>%
@@ -91,17 +120,40 @@ ward_2024 <- dc_311_2024 %>%
   group_by(WARD, SERVICECODEDESCRIPTION, year, month) %>%
   summarize(
     total_calls = n(),
-    total_response = mean(response_time)
+    avg_response = mean(response_time)
   ) %>%
   ungroup() %>%
   filter(!is.na(WARD) & WARD != "Null")
 
+ward_2023 <- dc_311_2023 %>%
+  st_drop_geometry() %>%
+  # recategorize ward spelled out
+  mutate(WARD = case_when(WARD == "Ward 1" ~ "1",
+                          WARD == "Ward 2" ~ "2",
+                          WARD == "Ward 3" ~ "3",
+                          WARD == "Ward 4" ~ "4",
+                          WARD == "Ward 5" ~ "5",
+                          WARD == "Ward 6" ~ "6",
+                          WARD == "Ward 7" ~ "7",
+                          WARD == "Ward 8" ~ "8",
+                          TRUE ~ WARD)) %>%
+  group_by(WARD, SERVICECODEDESCRIPTION, year, month) %>%
+  summarize(
+    total_calls = n(),
+    avg_response = mean(response_time)
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(WARD) & WARD != "Null")
+
+ward_all <- rbind(ward_2023, ward_2024)
+
+
 # map: average response times
 set_urbn_defaults(style = "map")
 
-map_data <- tracts_2024 %>%
+map_data <- tracts_all %>%
   group_by(GEOID) %>%
-  summarize(response_avg = weighted.mean(total_response, total_calls),
+  summarize(response_avg = weighted.mean(avg_response, total_calls),
             sum_total_calls = sum(total_calls)) %>%
   ungroup()
 
@@ -122,6 +174,8 @@ t1 <- dc_tracts %>%
   ggtitle("Average Response Time (in Days)") + 
   labs(caption = paste("**Source:**", "311 data (Open Data DC)"))
 
+t1
+
 # map: # of calls
 t2 <- dc_tracts %>%
   full_join(map_data, by = c("GEOID")) %>%
@@ -140,9 +194,11 @@ t2 <- dc_tracts %>%
   ggtitle("Total 311 Calls") + 
   labs(caption = paste("**Source:**", "311 data (Open Data DC)"))
 
+t2
+
 grid.arrange(t1, t2, nrow = 1)
 
-# map alternative
+# map alternative - interactive
 m1<- dc_tracts %>%
   full_join(map_data, by = c("GEOID")) %>%
   mapview(zcol = "sum_total_calls", col.regions = palette_urbn_cyan, 
@@ -164,6 +220,26 @@ table_data <- ward_2024 %>%
   ungroup()
 
 # math is not right. Need to take an average and then do a weighted average of averages.
+
+
+
+# line charts, over time
+
+
+
+
+# table data 
+
+
+
+
+
+
+
+
+
+
+
 
 
 
