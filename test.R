@@ -48,38 +48,38 @@ dc_wards <- st_read("https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/A
   select(WARD, NAME, GEOID, geometry)
 
 # load data 
-dc_311_2024 <- st_read("https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/ServiceRequests/FeatureServer/16/query?outFields=*&where=1%3D1&f=geojson", 
-                       quiet = TRUE) %>%
+dc_311_2024 <- read.csv("C:/Users/matthew.gerken/Downloads/311_City_Service_Requests_in_2024.csv") %>%
   select(SERVICECODEDESCRIPTION, ADDDATE, RESOLUTIONDATE, WARD, SERVICEORDERSTATUS) %>%
   filter(SERVICEORDERSTATUS == "Closed") %>%
   filter(!is.na(ADDDATE) & !is.na(RESOLUTIONDATE) & ADDDATE != 0 & RESOLUTIONDATE != 0) %>%
-  mutate(ADDDATE = ADDDATE/1000,
-         ADDDATE = as.POSIXct(ADDDATE, origin = "1970-01-01", tz = ),
-         RESOLUTIONDATE = RESOLUTIONDATE/1000,
-         RESOLUTIONDATE = as.POSIXct(RESOLUTIONDATE, origin = "1970-01-01", tz = ),
+  mutate(ADDDATE = ymd_hms(ADDDATE, tz = "UTC"),
+         RESOLUTIONDATE = ymd_hms(RESOLUTIONDATE, tz = "UTC"),
          month = month(ADDDATE, label = TRUE, abbr = TRUE),
          year = year(ADDDATE),
          response_time = difftime(RESOLUTIONDATE, ADDDATE, units = "days"),
          response_time = round(as.numeric(response_time), digits = 2)) %>%
-  select(-ADDDATE, -RESOLUTIONDATE, -SERVICEORDERSTATUS) %>%
-  st_transform(crs = 6487)
+  select(-ADDDATE, -RESOLUTIONDATE, -SERVICEORDERSTATUS)
 
 # load data for 2023
-dc_311_2023 <- st_read("https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/ServiceRequests/FeatureServer/15/query?outFields=*&where=1%3D1&f=geojson", 
-                       quiet = TRUE) %>%
+dc_311_2023 <- read.csv("C:/Users/matthew.gerken/Downloads/311_City_Service_Requests_in_2023.csv") %>%
   select(SERVICECODEDESCRIPTION, ADDDATE, RESOLUTIONDATE, WARD, SERVICEORDERSTATUS) %>%
   filter(SERVICEORDERSTATUS == "Closed") %>%
   filter(!is.na(ADDDATE) & !is.na(RESOLUTIONDATE) & ADDDATE != 0 & RESOLUTIONDATE != 0) %>%
-  mutate(ADDDATE = ADDDATE/1000,
-         ADDDATE = as.POSIXct(ADDDATE, origin = "1970-01-01", tz = ),
-         RESOLUTIONDATE = RESOLUTIONDATE/1000,
-         RESOLUTIONDATE = as.POSIXct(RESOLUTIONDATE, origin = "1970-01-01", tz = ),
+  mutate(ADDDATE = ymd_hms(ADDDATE, tz = "UTC"),
+         RESOLUTIONDATE = ymd_hms(RESOLUTIONDATE, tz = "UTC"),
          month = month(ADDDATE, label = TRUE, abbr = TRUE),
          year = year(ADDDATE),
          response_time = difftime(RESOLUTIONDATE, ADDDATE, units = "days"),
          response_time = round(as.numeric(response_time), digits = 2)) %>%
-  select(-ADDDATE, -RESOLUTIONDATE, -SERVICEORDERSTATUS) %>%
-  st_transform(crs = 6487)
+  select(-ADDDATE, -RESOLUTIONDATE, -SERVICEORDERSTATUS)
+
+
+# combined spreadsheet
+combined_311 <- dc_311_2023 %>%
+  rbind(dc_311_2024) 
+
+write.xlsx(combined_311, "C:/Data Strategy Team/311_combined.xlsx")
+
 
 # census tract summ
 tracts_2024 <- st_join(dc_311_2024, dc_tracts, join = st_intersects) %>%
